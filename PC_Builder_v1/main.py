@@ -8,15 +8,20 @@ from pymoo.core.variable import Integer
 from pymoo.visualization.scatter import Scatter
 from pymoo.optimize import minimize
 
+import os
+
+# Get the directory where main.py is located
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
 try:
-    mobos = pd.read_csv("motherboards.csv")
-    ram = pd.read_csv("ram.csv")
-    ssds = pd.read_csv("ssds.csv")
-    gpus = pd.read_csv("gpus.csv")
-    cpus = pd.read_csv("cpus.csv")
+    mobos = pd.read_csv(os.path.join(script_dir, "motherboards.csv"))
+    ram = pd.read_csv(os.path.join(script_dir, "ram.csv"))
+    ssds = pd.read_csv(os.path.join(script_dir, "ssds.csv"))
+    gpus = pd.read_csv(os.path.join(script_dir, "gpus.csv"))
+    cpus = pd.read_csv(os.path.join(script_dir, "cpus.csv"))
 
 except FileNotFoundError as e:
-    print("File not found")
+    print(f"File not found: {e}")
     exit()
 
 
@@ -62,20 +67,15 @@ class PCBuilderProblem(ElementwiseProblem):
         budget_constraint = total_price - self.max_budget
 
         socket_constraint = (
-            True if mobos.loc[m_idx, "socket"] == cpus.loc[c_idx, "socket"] else False
+            0 if mobos.loc[m_idx, "socket"] == cpus.loc[c_idx, "socket"] else 1
         )
 
         ram_constraint = (
-            True if mobos.loc[m_idx, "ram_type"] == ram.loc[r_idx, "ram_type"] else False
+            0 if mobos.loc[m_idx, "ram_type"] == ram.loc[r_idx, "ram_type"] else 1
         )
 
         out["G"] = [budget_constraint]
         out["H"]  = [ram_constraint, socket_constraint]
-
-    
-
-
-
 
 problem = PCBuilderProblem()
 
