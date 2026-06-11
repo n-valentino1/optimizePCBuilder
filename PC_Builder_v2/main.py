@@ -26,16 +26,39 @@ except FileNotFoundError as e:
     print(f"File not found: {e}")
     exit()
 
-cpu_cols = ['core_count', 'core_clock', 'price']
+mobos = mobos.dropna(subset=['price', 'socket']).reset_index(drop=True)
+ram   = ram.dropna(subset=['price']).reset_index(drop=True)
+ssds  = ssds.dropna(subset=['price']).reset_index(drop=True)
+gpus  = gpus.dropna(subset=['price', 'core_clock', 'memory']).reset_index(drop=True)
+cpus  = cpus.dropna(subset=['price', 'boost_clock', 'core_clock']).reset_index(drop=True)
+
+cpu_cols = ['core_count', 'core_clock', 'boost_clock']
 scaler = MinMaxScaler()
 cpus[cpu_cols] = scaler.fit_transform(cpus[cpu_cols])
 
+gpu_cols = ['memory', 'core_clock']
+scaler = MinMaxScaler()
+gpus[gpu_cols] = scaler.fit_transform(gpus[gpu_cols])
 
-print(cpus[cpu_cols])
+arch_to_socket = {
+    'Zen 5': 'AM5',
+    'Zen 4': 'AM5',
+    'Zen 3': 'AM4',
+    'Zen 2': 'AM4',
+    'Zen': 'AM4',
+    'Raptor Lake': 'LGA1700',
+    'Alder Lake': 'LGA1700',
+    'Rocket Lake': 'LGA1200',
+    'Comet Lake': 'LGA1200',
+}
+
+cpus['socket']  = cpus['microarchitecture'].map(arch_to_socket)
+cpus = cpus.dropna(subset=['socket']).reset_index(drop=True)
+
 class PCBuilder(ElementwiseProblem):
     
     def __init__(self):
-        super.__init__(
+        super().__init__(
             n_var = 5,
             xl = np.array([0, 0, 0, 0, 0]),
             xu = np.array([len(mobos) -1, 
@@ -44,10 +67,11 @@ class PCBuilder(ElementwiseProblem):
                            len(gpus) -1, 
                            len(cpus) - 1
                            ]),
-            n_obj = 2
+            n_obj = 2,
+            n_ieq_constr = 2
         )
 
-        self.max_budget = 1200
+        self.max_budget = 4000
         self.gpu_weight = 0.7
         self.cpu_weight = 0.3
 
@@ -68,21 +92,28 @@ class PCBuilder(ElementwiseProblem):
         )
 
         #performance
-        cpu_perf = cpus.loc[c_idx, 'core_count'] + cpus.loc['core_clock']
+        cpu_perf = cpus.loc[c_idx, 'core_count'] + cpus.loc[c_idx, 'core_clock'] + cpus.loc[c_idx, 'boost_clock']
+        gpu_perf = gpus.loc[g_idx, 'memory'] + gpus.loc[g_idx, 'core_clock']
 
-        total_performance = cpu_perf * self.cpu_weight
+        total_performance = (cpu_perf * self.cpu_weight) + (gpu_perf * self.gpu_weight)
 
+        socket_constraint = (
+            0 if mobos.loc[m_idx, "socket"] == cpus.loc[c_idx, 'socket'] else 1
+        )
 
         out["F"] = [total_price, -total_performance]
 
+        budget_constraint = total_price - self.max_budget
+        out["G"] = [budget_constraint, socket_constraint]
+
 problem = PCBuilder()
 
-algorithm = NSGA2(pop_size = 100)
+algorithm = NSGA2(pop_size = 1500)
 
 res = minimize(
         problem,
         algorithm,
-        termination=('n_gen', 50), # Run for 50 generations
+        termination=('n_gen', 100),
         seed=1,
         verbose=False
         )
