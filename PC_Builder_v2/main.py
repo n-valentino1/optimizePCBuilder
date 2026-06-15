@@ -7,6 +7,10 @@ from pymoo.algorithms.moo.nsga2 import NSGA2
 from pymoo.core.variable import Integer
 from pymoo.visualization.scatter import Scatter
 from pymoo.optimize import minimize
+from pymoo.visualization.pcp import PCP
+
+import matplotlib.pyplot as plt
+
 
 from sklearn.preprocessing import MinMaxScaler
 
@@ -52,6 +56,8 @@ arch_to_socket = {
     'Comet Lake': 'LGA1200',
 }
 
+
+
 cpus['socket']  = cpus['microarchitecture'].map(arch_to_socket)
 cpus = cpus.dropna(subset=['socket']).reset_index(drop=True)
 
@@ -67,7 +73,7 @@ class PCBuilder(ElementwiseProblem):
                            len(gpus) -1, 
                            len(cpus) - 1
                            ]),
-            n_obj = 2,
+            n_obj = 6,
             n_ieq_constr = 2
         )
 
@@ -95,13 +101,26 @@ class PCBuilder(ElementwiseProblem):
         cpu_perf = cpus.loc[c_idx, 'core_count'] + cpus.loc[c_idx, 'core_clock'] + cpus.loc[c_idx, 'boost_clock']
         gpu_perf = gpus.loc[g_idx, 'memory'] + gpus.loc[g_idx, 'core_clock']
 
+        cpu_clock = cpus.loc[c_idx, 'boost_clock']          
+        cpu_cores = cpus.loc[c_idx, 'core_count']          
+        gpu_clock = gpus.loc[g_idx, 'core_clock']           
+        gpu_memory = gpus.loc[g_idx, 'memory']                        
+        ssd_capacity = ssds.loc[s_idx, 'capacity']   
         total_performance = (cpu_perf * self.cpu_weight) + (gpu_perf * self.gpu_weight)
 
         socket_constraint = (
             0 if mobos.loc[m_idx, "socket"] == cpus.loc[c_idx, 'socket'] else 1
         )
 
-        out["F"] = [total_price, -total_performance]
+
+        out["F"] = [
+            total_price,           
+            -cpu_clock,            
+            -cpu_cores,           
+            -gpu_memory,           
+            -gpu_clock,
+            -ssd_capacity            
+        ]
 
         budget_constraint = total_price - self.max_budget
         out["G"] = [budget_constraint, socket_constraint]
@@ -118,6 +137,11 @@ res = minimize(
         verbose=False
         )
 
-plot = Scatter(title="Approximated Pareto Front", xlabel="Price", ylabel="Performance")
-plot.add(res.F, color="red", marker="o")
+labels = ["Price", "-CPU Clock", "-CPU Cores", "-GPU VRAM", "-GPU Clock", "-SSD Size"]
+plot = PCP(title="PC Builds - Pareto Front", labels=labels)
+plot.set_axis_style(color="grey", alpha=0.5)
+plot.add(res.F, color="grey", alpha=0.15)
 plot.show()
+
+#Validate your solutions by making your own choice with common sense and see if it's better or worse
+#https://pymoo.org/visualization/pcp.html
